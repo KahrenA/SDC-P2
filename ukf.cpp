@@ -83,9 +83,6 @@ UKF::UKF()
 	z = VectorXd(n_z_);
 	Zsig = MatrixXd(n_z_, 2*n_aug_+1);
 
-//	H_laser_ = MatrixXd(2,4);
-//	H_laser_ << 1, 0, 0, 0,
-//	            0, 1, 0, 0;
 
 	// -------------set weights---------------
 	weights_ = VectorXd(2*n_aug_+1);
@@ -98,6 +95,12 @@ UKF::UKF()
     	weights_(i) = weight;
   	}
 	//cout << "created weights_(i) = " << weights_ << "\n\n";
+
+	// ---- Lidar stuff
+//	H_laser_ = MatrixXd(2,4);
+//	H_laser_ << 1, 0, 0, 0,
+//	            0, 1, 0, 0;
+
 
   	// Hint: one or more values initialized above might be wildly off...
 	
@@ -139,7 +142,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package)
 			x_ << meas_package.raw_measurements_[1], 
 						meas_package.raw_measurements_[1], 0, 0, 0;  
 
-			cout << "x_ raw measurements = " << x_ << "\n\n";	
+			cout << "init: radar x_ = " << x_ << "\n";	
 	
 			time_us_ = meas_package.timestamp_;
  		
@@ -151,12 +154,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package)
 			x_ << meas_package.raw_measurements_[0], 
 						meas_package.raw_measurements_[1], 0, 0, 0;
 
-			cout << "Read laser data\n"; 
+			cout << "init: lidar x_ = " << x_ << "\n";	
 
 			time_us_ = meas_package.timestamp_;
  		}
 
-		cout << "read x_ successfully \n\n";
 
 		//=============================
 		GenerateAugmentedSigmaPoints();
@@ -228,6 +230,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package)
 //Predicts sigma points, the state, and the state covariance matrix.
 // @param {double} delta_t the change in time (in seconds) between the last
 //measurement and this one.
+//
+// delta_t ----
+//             |--- Xsig_pred_ -----
+// Xsig_aug ---						| -- Predicted x_ & P-
+// weights -------------------------
+// 
 //************************************************************************
 void UKF::Prediction(double delta_t) 
 {
@@ -315,7 +323,7 @@ void UKF::Prediction(double delta_t)
 	//---------------------------------
   	//predicted state covariance matrix
 	//---------------------------------
-  	// P_.fill(0.0);
+  	P_.fill(0.0);
 
 	// iterate over sigma points
   	for (int i = 0; i < 2 * n_aug_ + 1; i++) 
@@ -359,6 +367,12 @@ void UKF::UpdateLidar(MeasurementPackage meas_package)
 //
 // Updates the state and the state covariance matrix using a radar measurement.
 // @param {MeasurementPackage} meas_package
+// 
+// Xsig_pred_ ---> Zsig ---. z_pred ---> S ----------->
+// 										|				|
+//										 Tc ---> K --->   --- x_ & P_ (actual)
+//														|
+//										 z(meas) ------> 
 //*****************************************************************************
 void UKF::UpdateRadar(MeasurementPackage meas_package) 
 {
@@ -382,16 +396,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package)
 
 		// measurement model
 		Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);                        //r
-		if(fabs(Zsig(0,i)) < 0.001)
-			Zsig(0,i) = 0.001;	
-
 		Zsig(1,i) = atan2(p_y,p_x);                                 //phi
-		if(fabs(Zsig(1,i)) < 0.001)
-			Zsig(1,i) = 0.001;	
-
 		Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
-		if(fabs(Zsig(2,i)) < 0.001)
-			Zsig(2,i) = 0.001;	
 	}
 
 	// mean predicted measurement
@@ -486,7 +492,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package)
  
   	// You'll also need to calculate the radar NIS.
 	// E = NIS_radar_ = (zk+1 - zk+1|k)T * Sinv k+1|k * ( zk+1 - zk+1|k)
-	NIS_radar_ = (z - z_pred).transpose() * S.inverse() * (z-z_pred);
+	NIS_radar_ = z_diff.transpose() * S.inverse() * z_diff;
 	cout << "NIS_radar_ = " << NIS_radar_ << "\n\n";
 	
 	//if( NIS_radar_ > 7.815 ) ... adjust something 
@@ -498,6 +504,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package)
 //GenerateAugmentedSigmaPoints
 // 
 // Based on last P_ and measured x_, generated sigma points
+// 
+// x_ -------> x_aug --->
+//						 | ---> XSig_aug
+// P_ & Q ---> P_aug --->
+//
 //**************************************************************
 void UKF::GenerateAugmentedSigmaPoints()
 {
@@ -515,7 +526,8 @@ void UKF::GenerateAugmentedSigmaPoints()
 	    x_aug(i) = x_(i);
 	}
 
-	x_aug(5) = x_aug(6) = 0;
+	x_aug(5) = std_a_;
+	x_aug(6) = std_yawdd_;
 //	std::cout << "\nx_aug = \n" << x_aug << "\n\n";
 
 	//----------------------------------------------------------
