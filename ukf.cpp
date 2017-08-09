@@ -82,7 +82,7 @@ UKF::UKF()
 	// Measurement 
 	z = VectorXd(n_z_);
 	Zsig = MatrixXd(n_z_, 2*n_aug_+1);
-
+	z_lidar = VectorXd(2);
 
 	// -------------set weights---------------
 	weights_ = VectorXd(2*n_aug_+1);
@@ -97,9 +97,9 @@ UKF::UKF()
 //	  cout << "created weights_(i) = " << weights_ << "\n\n";
 
 	// ---- Lidar stuff
-	H_laser_ = MatrixXd(2,4);
-	H_laser_ << 1, 0, 0, 0,
-	            0, 1, 0, 0;
+	H_laser_ = MatrixXd(2,5);
+	H_laser_ << 1, 0, 0, 0, 0, 
+	            0, 1, 0, 0, 0;
 
 
 // ------NIS to file stuff
@@ -265,9 +265,6 @@ void UKF::Prediction(double delta_t)
 		double nu_a     = Xsig_aug(5,i);
 		double nu_yawdd = Xsig_aug(6,i);
 
-//		  cout << "i = " << i << "\n";
-//		  cout << "p_x = " << p_x << "\t" << "p_y = " << p_y << "\t" << "v = " << v << "\t" << "yaw = " << yaw << "\t" 
-//							<< "yawd = " << yawd << "\t" << "nu_a = " << nu_a << "\t" << "nu_yawdd = " << nu_yawdd << "\n";
 
 		//predicted state values
 		double px_p, py_p;
@@ -307,7 +304,6 @@ void UKF::Prediction(double delta_t)
     	Xsig_pred_(4,i) = yawd_p;
 
 	} // for
-//	  cout << "Done with Predicting Sigma Points\n";
 
 
 	//-------------------------------
@@ -346,7 +342,7 @@ void UKF::Prediction(double delta_t)
 
  	} // for
 
-	  cout << "Predicted P_ = " << "\n" << P_ << "\n\n";
+//	  cout << "Predicted P_ = " << "\n" << P_ << "\n\n";
   
 }
 
@@ -358,51 +354,48 @@ void UKF::Prediction(double delta_t)
 //*****************************************************************************
 void UKF::UpdateLidar(MeasurementPackage meas_package) 
 {
-	cout << "In UpdateLidar\n"; 
+//	cout << "In UpdateLidar\n"; 
 
 	// TODO:
   	// Complete this function! Use lidar data to update the belief about the object's
   	// position. Modify the state vector, x_, and covariance, P_.
 
-	z << meas_package.raw_measurements_(0), meas_package.raw_measurements_(1);
-	cout << "UpdateRLidar: measured z = \n" << z << "\n\n";
- 
 
- 	VectorXd z_pred = H_laser_ * x_;
-	cout << "z_pred = " << z_pred << "\n\n";
-
-	VectorXd y = z - z_pred;
-	cout << "y = " << y << "\n\n";
+	z_lidar << meas_package.raw_measurements_(0), 
+				meas_package.raw_measurements_(1);	//(2x1)
+//	cout << "UpdateRLidar: measured z_lidar = \n" << z_lidar << "\n\n";
 
 
-	MatrixXd Ht = H_laser_.transpose();
+ 	VectorXd z_pred_laser = VectorXd(2);
+	z_pred_laser = H_laser_ * x_;				// (2x5)(5x1) = (2x1)
+//	cout << "z_pred_laser = " << z_pred_laser << "\n\n";
+
+	VectorXd y = z_lidar - z_pred_laser; 		//(2x1) - (2x1) = (2x1)
+
+	MatrixXd Ht = H_laser_.transpose();			// (5x2)
 
  	MatrixXd R_lidar_ = MatrixXd(2, 2);
   	R_lidar_ <<    std_laspx_ * std_laspx_, 	0, 
     	    		0, 						std_laspy_ * std_laspy_;
 
 
-	MatrixXd S = H_laser_ * P_ * Ht + R_lidar_;
-	cout << "S = " << S << "\n\n";
+	MatrixXd S = H_laser_ * P_ * Ht + R_lidar_;	//(2x5)(5x5)(5x2)(2x2)=(2x2)
 
-	MatrixXd Si = S.inverse();
+	MatrixXd Si = S.inverse();					// (2x2)
 
-	MatrixXd PHt = P_ * Ht;
-	cout << "P * Ht = " << PHt << "\n\n";
+	MatrixXd PHt = P_ * Ht;						// (5x5) (5x2) = (5x2)
 
-	MatrixXd K = PHt * Si;
-	cout << "K = " << K << "\n\n";
+	MatrixXd K = PHt * Si;						// (5x2) (2x2) = (5x2)
 
 	//new estimate
-	x_ = x_ + (K * y);
-	cout << "Lidar x_ = " << x_ << "\n\n";
+	x_ = x_ + (K * y);							// (5x1) + (5x2)(2x1) = (5x1)
+	cout << "x_ = \n" << x_ << "\n\n";
 
 	long x_size = x_.size();
 	MatrixXd I = MatrixXd::Identity(x_size, x_size);
-	P_ = (I - K * H_laser_) * P_;
-	cout << "Lidar P_ = " << P_ << "\n\n";
-  	
 
+	P_ = (I - K * H_laser_) * P_;			// ((4x4) - (4x2)(2x4)) * (4x4) = (4x4)
+//	cout << "P_lidar = \n" << P_ << "\n\n";
 
 }
 
@@ -516,7 +509,9 @@ void UKF::UpdateRadar(MeasurementPackage meas_package)
   	MatrixXd K = Tc * S.inverse();
 
   	//residual
-	z << meas_package.raw_measurements_(0), meas_package.raw_measurements_(1), meas_package.raw_measurements_(2);
+	z << 	meas_package.raw_measurements_(0), 
+		 	meas_package.raw_measurements_(1), 
+		 	meas_package.raw_measurements_(2);
 //	cout << "UpdateRadar: measured z = \n" << z << "\n\n";
   	
 	VectorXd z_diff = z - z_pred;

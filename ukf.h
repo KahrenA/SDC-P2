@@ -80,10 +80,12 @@ public:
 	MatrixXd Xsig_aug;
 	MatrixXd Zsig;
 	VectorXd z;
+	VectorXd z_lidar;
 
 	MatrixXd H_laser_;
 
-
+	// output file stuff
+	
 
   /**
    * Constructor
